@@ -1,7 +1,7 @@
 package mockit.mockit.domain.trading.domain.repository;
 
-import org.hibernate.query.Order;
+import mockit.mockit.domain.trading.domain.entity.Orders;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface OrdersRepository extends JpaRepository<Order, Long> {
+public interface OrdersRepository extends JpaRepository<Orders, Long> {
 }
