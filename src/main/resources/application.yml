@@ -1,0 +1,37 @@
+server:
+  port: 8080
+  forward-headers-strategy: framework
+
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:.env.${spring.profiles.active}[.properties]
+
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+jwt:
+  secret: ${JWT_SECRET:__dev_only_change_me__}
+  access-token-expiration: 3600000
+  refresh-token-expiration: 604800000
+
+management:
+  metrics:
+    enable:
+      process.cpu: false
+
+logging:
+  level:
+    org.hibernate.SQL: info
