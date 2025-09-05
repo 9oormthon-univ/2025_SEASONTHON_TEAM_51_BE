@@ -3,6 +3,7 @@ package com.mockit.domain.trade.controller;
 import com.mockit.domain.trade.dto.request.PlaceOrderRequest;
 import com.mockit.domain.trade.dto.response.OrderResponse;
 import com.mockit.domain.trade.service.OrderCommandService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,7 +20,7 @@ public class OrderCommandController {
     private final OrderCommandService orderCommandService;
 
     @PostMapping
-    public OrderResponse place(@Validated @RequestBody PlaceOrderRequest request) {
+    public OrderResponse place(@Valid @RequestBody PlaceOrderRequest request) {
         return orderCommandService.place(request);
     }
 }
