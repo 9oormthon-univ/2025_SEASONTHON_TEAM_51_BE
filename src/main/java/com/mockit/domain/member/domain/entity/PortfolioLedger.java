@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "PortfolioLedger")
+@Table(name = "member_portfolio_ledger")
 @Getter
 @Setter
 public class PortfolioLedger {
@@ -16,16 +16,17 @@ public class PortfolioLedger {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(name = "member_id", nullable = false)
     private Long memberId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 18, scale = 4)
     private BigDecimal delta;
 
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
     private TransactionReason reason;
 
+    @Column(name = "ref_id")
     private String refId;
 
     @Column(nullable = false)
