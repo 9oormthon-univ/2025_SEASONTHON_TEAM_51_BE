@@ -20,6 +20,12 @@ public class MarketCalendar {
         var date = nowKst.toLocalDate();
         var t = nowKst.toLocalTime();
         if (t.isAfter(CLOSE)) date = date.plusDays(1);
+        // 주말 보정
+        switch (date.getDayOfWeek()) {
+            case SATURDAY -> date = date.plusDays(2);
+            case SUNDAY   -> date = date.plusDays(1);
+            default -> {}
+        }
         return date.atTime(OPEN);
     }
 }

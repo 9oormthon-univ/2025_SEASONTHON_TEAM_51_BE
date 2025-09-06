@@ -74,4 +74,10 @@ public class Order extends BaseEntity {
         this.status = OrderStatus.FILLED;
         this.filledAt = ts;
     }
+
+    public void cancel() { this.status = OrderStatus.CANCELED; }
+
+    public void markOpen() { this.status = OrderStatus.OPEN; }
+
+    public void scheduleAt(LocalDateTime ts) { this.validAfterTs = ts; }
 }
