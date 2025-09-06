@@ -4,6 +4,7 @@ import com.mockit.domain.trading.application.TradingService;
 import com.mockit.domain.trading.dto.TradingRequestDTO;
 import com.mockit.domain.trading.dto.TradingResponseDTO;
 import com.mockit.global.common.response.BaseResponse;
+import com.mockit.global.config.TokenUtils;
 import com.mockit.global.error.code.status.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -19,9 +20,7 @@ import java.util.List;
 public class TradingRestController {
 
     private final TradingService tradingService;
-
-    // TODO: 현재 로그인된 사용자 ID를 가져오는 로직 필요
-    private final Long memberId = 1L;
+    private final TokenUtils tokenUtils;
 
     @PostMapping("/orders")
     @Operation(summary = "주문 생성 API", description = "새로운 매수/매도 주문을 생성합니다.")
@@ -29,8 +28,11 @@ public class TradingRestController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "OK", description = "주문이 성공적으로 생성되었습니다.")
     })
     public BaseResponse<TradingResponseDTO.OrderDto> createOrder(
+            @RequestHeader(name = "Authorization") String authorizationHeader,
             @RequestBody @Valid TradingRequestDTO.CreateOrderDto request
     ) {
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
         TradingResponseDTO.OrderDto result = tradingService.createOrder(memberId, request);
         return BaseResponse.onSuccess(SuccessStatus.OK, result);
     }
@@ -41,8 +43,11 @@ public class TradingRestController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "주문 목록이 성공적으로 조회되었습니다.")
     })
     public BaseResponse<List<TradingResponseDTO.OrderListDto>> getOrders(
+            @RequestHeader(name = "Authorization") String authorizationHeader,
             @RequestParam(name = "status") String status
     ) {
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
         List<TradingResponseDTO.OrderListDto> result = tradingService.getOrders(memberId, status);
         return BaseResponse.onSuccess(SuccessStatus.OK, result);
     }
@@ -53,8 +58,10 @@ public class TradingRestController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "보유 주식 포지션 목록이 성공적으로 조회되었습니다.")
     })
     public BaseResponse<List<TradingResponseDTO.PositionDto>> getPositions(
-            //@RequestHeader(name = "Authorization") String authorizationHeader
+            @RequestHeader(name = "Authorization") String authorizationHeader
     ) {
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
         List<TradingResponseDTO.PositionDto> result = tradingService.getPositions(memberId);
         return BaseResponse.onSuccess(SuccessStatus.OK, result);
     }
@@ -65,8 +72,10 @@ public class TradingRestController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "총 자산 현황이 성공적으로 조회되었습니다.")
     })
     public BaseResponse<TradingResponseDTO.PortfolioDto> getPortfolio(
-            //@RequestHeader(name = "Authorization") String authorizationHeader
+            @RequestHeader(name = "Authorization") String authorizationHeader
     ) {
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
         TradingResponseDTO.PortfolioDto result = tradingService.getPortfolio(memberId);
         return BaseResponse.onSuccess(SuccessStatus.OK, result);
     }
@@ -79,11 +88,12 @@ public class TradingRestController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "주문 취소 권한이 없습니다.")
     })
     public BaseResponse<TradingResponseDTO.CancelOrderDto> cancelOrder(
-            //@RequestHeader(name = "Authorization") String authorizationHeader,
+            @RequestHeader(name = "Authorization") String authorizationHeader,
             @PathVariable Long orderId
     ) {
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
         TradingResponseDTO.CancelOrderDto result = tradingService.cancelOrder(memberId, orderId);
         return BaseResponse.onSuccess(SuccessStatus.OK, result);
     }
-
 }
