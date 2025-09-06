@@ -1,14 +1,25 @@
 -- charset/콜레이션은 DB 생성 시점에 지정했다고 가정 (utf8mb4)
--- ====== USERS (카카오 로그인 도입 전 최소 스키마) ======
-CREATE TABLE IF NOT EXISTS users (
-                                     id            BIGINT PRIMARY KEY AUTO_INCREMENT,
-                                     provider      VARCHAR(20)  NOT NULL DEFAULT 'DEV',
-    subject       VARCHAR(64)  NULL,            -- KAKAO 고유 id (미사용시 NULL)
-    nickname      VARCHAR(100) NULL,
-    created_at    DATETIME(6)  NULL,
-    updated_at    DATETIME(6)  NULL,
-    UNIQUE KEY uq_provider_subject (provider, subject)
-    );
+-- -- ====== USERS (카카오 로그인 도입 전 최소 스키마) ======
+-- CREATE TABLE IF NOT EXISTS users (
+--                                      id            BIGINT PRIMARY KEY AUTO_INCREMENT,
+--                                      provider      VARCHAR(20)  NOT NULL DEFAULT 'DEV',
+--     subject       VARCHAR(64)  NULL,            -- KAKAO 고유 id (미사용시 NULL)
+--     nickname      VARCHAR(100) NULL,
+--     created_at    DATETIME(6)  NULL,
+--     updated_at    DATETIME(6)  NULL,
+--     UNIQUE KEY uq_provider_subject (provider, subject)
+--     );
+-- USERS: 카카오 전용 로그인 스키마
+CREATE TABLE users (
+   member_id         BIGINT PRIMARY KEY AUTO_INCREMENT,
+   provider          VARCHAR(20)  NOT NULL DEFAULT 'KAKAO',
+   subject           VARCHAR(64)  NOT NULL,
+   nickname          VARCHAR(100) NULL,
+   profile_image_url VARCHAR(512) NULL,
+   created_at        DATETIME(6)  NULL,
+   updated_at        DATETIME(6)  NULL,
+   UNIQUE KEY uq_provider_subject (provider, subject)
+);
 
 -- ====== INSTRUMENTS / CANDLES ======
 CREATE TABLE IF NOT EXISTS instruments (
