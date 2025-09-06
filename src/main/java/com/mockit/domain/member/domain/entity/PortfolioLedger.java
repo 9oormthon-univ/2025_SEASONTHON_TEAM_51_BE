@@ -1,3 +1,4 @@
+// src/main/java/com/mockit/domain/member/domain/entity/PortfolioLedger.java
 package com.mockit.domain.member.domain.entity;
 
 import jakarta.persistence.*;
@@ -16,7 +17,8 @@ public class PortfolioLedger {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    // ✅ DB 컬럼명이 user_id 이므로 명시 매핑
+    @Column(name = "user_id", nullable = false)
     private Long memberId;
 
     @Column(nullable = false)
