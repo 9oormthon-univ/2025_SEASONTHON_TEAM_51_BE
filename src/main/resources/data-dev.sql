@@ -3,7 +3,7 @@ VALUES ('DEV', 'u1', 'dev-user-1', NOW(6), NOW(6))
     ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at);
 
 -- 현금 1,000,000원 입금
-INSERT INTO portfolio_ledger (user_id, delta, reason, ref_id, ts)
+INSERT INTO portfolio_ledger (member_id, delta, reason, ref_id, ts)
 VALUES (1, 1000000.0000, 'DEPOSIT', 'seed', NOW(6));
 
 -- 심볼과 캔들 예시

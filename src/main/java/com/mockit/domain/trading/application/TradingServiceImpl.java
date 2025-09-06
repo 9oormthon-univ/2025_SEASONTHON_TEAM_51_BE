@@ -1,22 +1,25 @@
 package com.mockit.domain.trading.application;
 
-import com.mockit.domain.market.entity.Candle;
-import com.mockit.domain.market.entity.CandleId;
-import com.mockit.domain.market.repository.CandleRepository;
-import com.mockit.domain.python.PythonPredictionApiClient;
+import com.mockit.domain.member.domain.entity.PortfolioLedger;
+import com.mockit.domain.member.domain.repository.PortfolioLedgerRepository;
 import com.mockit.domain.trading.converter.TradingConverter;
+import com.mockit.domain.trading.domain.entity.Orders;
+import com.mockit.domain.trading.domain.entity.Positions;
 import com.mockit.domain.trading.domain.entity.Stocks;
+import com.mockit.domain.trading.domain.entity.Trades;
+import com.mockit.domain.trading.domain.repository.OrdersRepository;
+import com.mockit.domain.trading.domain.repository.PositionsRepository;
 import com.mockit.domain.trading.domain.repository.StocksRepository;
+import com.mockit.domain.trading.domain.repository.TradesRepository;
+import com.mockit.domain.trading.dto.TradingRequestDTO;
 import com.mockit.domain.trading.dto.TradingResponseDTO;
+import com.mockit.domain.trading.exception.TradingException;
+import com.mockit.global.error.code.status.ErrorStatus;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -25,128 +28,195 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TradingServiceImpl implements TradingService {
 
-    private final CandleRepository candlesRepository;
-    private final PythonPredictionApiClient predictionApiClient;
+    private final OrdersRepository ordersRepository;
+    private final TradesRepository tradesRepository;
+    private final PositionsRepository positionsRepository;
+    private final PriceService priceService;
+    private final TradeMatchingService matchingService;
     private final TradingConverter tradingConverter;
-    private static final int AI_MIN_DATA_POINTS = 5;
     private final StocksRepository stocksRepository;
-    private static final Logger log = LoggerFactory.getLogger(TradingServiceImpl.class);
+    private final PortfolioLedgerRepository portfolioLedgerRepository;
+
 
     @Transactional
-    public List<TradingResponseDTO.QuoteDto> getQuotes(List<String> symbols) {
-        List<TradingResponseDTO.QuoteDto> fetchedQuotes = predictionApiClient.getQuotes(symbols).block();
-        fetchedQuotes.forEach(quote -> {
-            Stocks stock = stocksRepository.findByStockCode(quote.getSymbol())
-                    .orElse(new Stocks());
+    public TradingResponseDTO.OrderDto createOrder(Long memberId, TradingRequestDTO.CreateOrderDto request) {
+        List<TradingResponseDTO.QuoteDto> quotes = priceService.getQuotes(List.of(request.getSymbol()));
 
-            stock.setStockCode(quote.getSymbol());
-            if (stock.getStockName() == null || stock.getStockName().isEmpty()) {
-                stock.setStockName(quote.getSymbol());
+        BigDecimal currentPrice;
+        if (quotes != null && !quotes.isEmpty()) {
+            currentPrice = quotes.get(0).getPrice();
+        } else {
+            throw new TradingException(ErrorStatus.STOCK_PRICE_FETCH_FAILED);
+        }
+
+        Orders order = new Orders();
+        order.setMemberId(memberId);
+        order.setStockCode(request.getSymbol());
+        order.setSide(Orders.OrderSide.valueOf(request.getSide()));
+        order.setType(Orders.OrderType.valueOf(request.getType()));
+        order.setQty(request.getQty());
+        order.setFilledQty(BigDecimal.ZERO);
+        order.setStatus(Orders.OrderStatus.OPEN);
+
+        // 먼저 Orders 엔티티를 저장하여 유효한 ID를 얻습니다.
+        Orders savedOrder = ordersRepository.save(order);
+
+        if (savedOrder.getType() == Orders.OrderType.MARKET) {
+            savedOrder.setPrice(currentPrice);
+            savedOrder.setFilledQty(request.getQty());
+            savedOrder.setStatus(Orders.OrderStatus.FILLED);
+            savedOrder.setFilledAt(LocalDateTime.now());
+            // ID가 있는 savedOrder 객체를 handleOrderExecution에 전달
+            handleOrderExecution(savedOrder);
+        } else if (savedOrder.getType() == Orders.OrderType.LIMIT) {
+            if (request.getPrice() == null) {
+                throw new TradingException(ErrorStatus.PRICE_REQUIRED_FOR_LIMIT_ORDER);
             }
-            stock.setCurrentPrice(quote.getPrice());
-            stocksRepository.save(stock);
-        });
-        return fetchedQuotes;
+            savedOrder.setPrice(request.getPrice());
+            // ID가 있는 savedOrder 객체를 매칭 서비스에 전달
+            matchingService.addOrderToQueue(savedOrder);
+        }
+
+        // 마지막에 한 번만 DTO로 변환하여 반환
+        return tradingConverter.toOrderDto(savedOrder);
     }
 
 
+    @Override
     @Transactional
-    public List<TradingResponseDTO.CandleDto> getCandles(String symbol, String tf, int limit) {
-        // 1. 필요한 총 데이터 개수
-        int requiredDataPoints = Math.max(limit, AI_MIN_DATA_POINTS);
+    public void handleOrderExecution(Orders order) {
+        // 1. Save the trade information to the Trades table
+        Trades trade = new Trades();
+        trade.setOrderId(order.getId());
+        trade.setStockCode(order.getStockCode());
+        trade.setPrice(order.getPrice());
+        trade.setQty(order.getFilledQty());
+        trade.setTs(LocalDateTime.now());
+        tradesRepository.save(trade);
 
-        // 2. DB에서 최근 캔들 데이터를 조회합니다.
-        List<Candle> recentCandles = getRecentCandles(symbol, tf, requiredDataPoints);
+        // 2. Update the Positions table
+        Optional<Positions> positionOptional = positionsRepository.findByMemberIdAndStockCode(order.getMemberId(), order.getStockCode());
 
-        // 3. AI 예측을 위한 최소 데이터가 부족할 경우 외부 API 호출
-        if (recentCandles.size() < AI_MIN_DATA_POINTS) {
-            log.info("AI 예측을 위한 최소 데이터({})가 부족합니다. 외부 API에서 과거 데이터를 가져옵니다.", AI_MIN_DATA_POINTS);
-
-            // 데이터 저장 및 반환 로직을 호출합니다.
-            List<Candle> allHistoricalCandles = saveAndReturnHistoricalCandles(symbol, tf);
-
-            // 다시 한번 데이터가 충분한지 확인
-            if (allHistoricalCandles.size() < AI_MIN_DATA_POINTS) {
-                log.warn("AI 예측에 필요한 최소 데이터({})가 여전히 부족합니다. 현재 데이터 수: {}. 예측을 진행할 수 없습니다.", AI_MIN_DATA_POINTS, allHistoricalCandles.size());
-                return Collections.emptyList();
+        if (order.getSide() == Orders.OrderSide.BUY) {
+            Positions position = positionOptional.orElse(new Positions());
+            if (position.getMemberId() == null) {
+                position.setMemberId(order.getMemberId());
+                position.setStockCode(order.getStockCode());
+                position.setQty(order.getFilledQty());
+                position.setAvgPrice(order.getPrice());
+            } else {
+                BigDecimal oldQty = position.getQty();
+                BigDecimal oldAvgPrice = position.getAvgPrice();
+                BigDecimal newQty = order.getFilledQty();
+                BigDecimal newPrice = order.getPrice();
+                BigDecimal newAvgPrice = (oldQty.multiply(oldAvgPrice).add(newQty.multiply(newPrice)))
+                        .divide(oldQty.add(newQty), 2, BigDecimal.ROUND_HALF_UP);
+                position.setQty(oldQty.add(newQty));
+                position.setAvgPrice(newAvgPrice);
             }
+            position.setUpdatedAt(LocalDateTime.now());
+            positionsRepository.save(position);
 
-            // 예측을 수행하고 결과를 반환합니다.
-            return predictAndCombineCandles(allHistoricalCandles, limit);
-        }
+            // 3. Update the cash balance for a BUY order
+            BigDecimal totalCost = order.getPrice().multiply(order.getFilledQty());
+            PortfolioLedger ledgerEntry = new PortfolioLedger();
+            ledgerEntry.setMemberId(order.getMemberId());
+            ledgerEntry.setDelta(totalCost.negate()); // Subtract the cost
+            ledgerEntry.setReason(PortfolioLedger.TransactionReason.TRADE);
+            ledgerEntry.setRefId(order.getId().toString()); // Reference the orderId
+            ledgerEntry.setTs(LocalDateTime.now());
+            portfolioLedgerRepository.save(ledgerEntry);
 
-        // 4. 최신 데이터가 오늘 날짜가 아닐 경우 AI 예측을 수행
-        if (recentCandles.get(0).getId().getTs().toLocalDate().isBefore(LocalDateTime.now().toLocalDate())) {
-            log.info("최신 데이터가 오늘 날짜가 아닙니다. AI 예측을 진행합니다.");
-            return predictAndCombineCandles(recentCandles, limit);
-        }
-
-        // 5. 모든 조건이 충족되면 기존 데이터만 반환합니다.
-        return recentCandles.stream()
-                .map(tradingConverter::toCandleDto)
-                .limit(limit)
-                .collect(Collectors.toList());
-    }
-
-    @Transactional
-    public List<Candle> saveAndReturnHistoricalCandles(String symbol, String tf) {
-        List<TradingResponseDTO.CandleDto> fetchedCandles = predictionApiClient.getHistoricalCandles(symbol, "1y", tf).block();
-
-        if (fetchedCandles != null && !fetchedCandles.isEmpty()) {
-            for (TradingResponseDTO.CandleDto dto : fetchedCandles) {
-                // 복합 키 생성
-                CandleId candleId = new CandleId(symbol, tf, dto.getTs().toLocalDate().atStartOfDay());
-
-                // 1. 데이터베이스에서 해당 키를 가진 캔들을 찾습니다.
-                Optional<Candle> existingCandleOptional = candlesRepository.findById(candleId);
-
-                if (existingCandleOptional.isPresent()) {
-                    // 2. 이미 존재하는 경우: 업데이트
-                    Candle existingCandle = existingCandleOptional.get();
-                    existingCandle.setOpenPrice(dto.getOpen());
-                    existingCandle.setHighPrice(dto.getHigh());
-                    existingCandle.setLowPrice(dto.getLow());
-                    existingCandle.setClosePrice(dto.getClose());
-                    existingCandle.setVolume(dto.getVolume());
-                    candlesRepository.save(existingCandle); // update
+        } else if (order.getSide() == Orders.OrderSide.SELL) {
+            if (positionOptional.isPresent()) {
+                Positions position = positionOptional.get();
+                BigDecimal updatedQty = position.getQty().subtract(order.getFilledQty());
+                if (updatedQty.compareTo(BigDecimal.ZERO) <= 0) {
+                    positionsRepository.delete(position);
                 } else {
-                    // 3. 존재하지 않는 경우: 삽입
-                    Candle newCandle = tradingConverter.toEntity(dto, symbol, tf);
-                    candlesRepository.save(newCandle); // insert
+                    position.setQty(updatedQty);
+                    positionsRepository.save(position);
                 }
             }
-            log.info("성공적으로 {}일치 데이터를 가져와 DB에 저장 또는 업데이트했습니다.", fetchedCandles.size());
+
+            // 3. Update the cash balance for a SELL order
+            BigDecimal totalProceeds = order.getPrice().multiply(order.getFilledQty());
+            PortfolioLedger ledgerEntry = new PortfolioLedger();
+            ledgerEntry.setMemberId(order.getMemberId());
+            ledgerEntry.setDelta(totalProceeds); // Add the proceeds
+            ledgerEntry.setReason(PortfolioLedger.TransactionReason.TRADE);
+            ledgerEntry.setRefId(order.getId().toString()); // Reference the orderId
+            ledgerEntry.setTs(LocalDateTime.now());
+            portfolioLedgerRepository.save(ledgerEntry);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public List<TradingResponseDTO.OrderListDto> getOrders(Long memberId, String status) {
+        Orders.OrderStatus orderStatus = Orders.OrderStatus.valueOf(status.toUpperCase());
+        List<Orders> orders = ordersRepository.findByMemberIdAndStatus(memberId, orderStatus);
+        return orders.stream()
+                .map(tradingConverter::toOrderListDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<TradingResponseDTO.PositionDto> getPositions(Long memberId) {
+        List<Positions> positions = positionsRepository.findByMemberId(memberId);
+        return positions.stream()
+                .map(position -> {
+                    Stocks stock = stocksRepository.findByStockCode(position.getStockCode())
+                            .orElseThrow(() -> new TradingException(ErrorStatus.STOCK_NOT_FOUND));
+                    return tradingConverter.toPositionDto(position, stock);
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public TradingResponseDTO.PortfolioDto getPortfolio(Long memberId) {
+        BigDecimal totalCash = portfolioLedgerRepository.findTotalCashByMemberId(memberId)
+                .orElse(BigDecimal.ZERO);
+        List<TradingResponseDTO.PositionDto> positions = getPositions(memberId);
+
+        BigDecimal totalAssetValue = BigDecimal.ZERO;
+        BigDecimal totalProfitAndLoss = BigDecimal.ZERO;
+
+        for (TradingResponseDTO.PositionDto position : positions) {
+            totalAssetValue = totalAssetValue.add(position.getCurrentPrice().multiply(position.getQty()));
+            totalProfitAndLoss = totalProfitAndLoss.add(position.getProfitAndLoss());
         }
 
-        int fetchLimit = fetchedCandles != null ? fetchedCandles.size() : 0;
-        return getRecentCandles(symbol, tf, Math.max(AI_MIN_DATA_POINTS, fetchLimit));
+        BigDecimal totalPortfolioValue = totalCash.add(totalAssetValue);
+
+        return TradingResponseDTO.PortfolioDto.builder()
+                .totalCash(totalCash)
+                .totalAssetValue(totalAssetValue)
+                .totalPortfolioValue(totalPortfolioValue)
+                .totalProfitAndLoss(totalProfitAndLoss)
+                .build();
     }
 
+    @Transactional
+    public TradingResponseDTO.CancelOrderDto cancelOrder(Long memberId, Long orderId) {
+        Orders order = ordersRepository.findById(orderId)
+                .orElseThrow(() -> new TradingException(ErrorStatus.ORDER_NOT_FOUND));
 
-
-    private List<TradingResponseDTO.CandleDto> predictAndCombineCandles(List<Candle> candles, int limit) {
-        List<Candle> historicalDataForAI = candles.stream()
-                .limit(AI_MIN_DATA_POINTS)
-                .collect(Collectors.toList());
-
-        if (historicalDataForAI.size() < AI_MIN_DATA_POINTS) {
-            log.warn("AI 예측에 필요한 최소 데이터({})가 부족합니다. 현재 데이터 수: {}. 예측을 진행할 수 없습니다.", AI_MIN_DATA_POINTS, historicalDataForAI.size());
-            return Collections.emptyList();
+        if (!order.getMemberId().equals(memberId)) {
+            throw new TradingException(ErrorStatus.ORDER_FORBIDDEN_ACCESS);
         }
 
-        TradingResponseDTO.PredictResponseDto predictedData = predictionApiClient.predict(historicalDataForAI);
+        if (order.getStatus() != Orders.OrderStatus.OPEN && order.getStatus() != Orders.OrderStatus.PARTIAL) {
+            throw new TradingException(ErrorStatus.ORDER_ALREADY_FILLED_OR_CANCELED);
+        }
 
-        TradingResponseDTO.CandleDto predictedCandle = tradingConverter.toCandleDto(predictedData, historicalDataForAI);
+        order.setStatus(Orders.OrderStatus.CANCELED);
 
-        List<TradingResponseDTO.CandleDto> candleDtos = candles.stream()
-                .map(tradingConverter::toCandleDto)
-                .limit(limit)
-                .collect(Collectors.toList());
-        candleDtos.add(0, predictedCandle);
-        return candleDtos;
+        matchingService.removeOrderFromQueue(order);
+
+        return TradingResponseDTO.CancelOrderDto.builder()
+                .success(true)
+                .message("Order canceled successfully.")
+                .build();
     }
 
-    private List<Candle> getRecentCandles(String symbol, String tf, int limit) {
-        return candlesRepository.findAllByIdStockCodeAndIdTfOrderByIdTsDesc(symbol, tf, PageRequest.of(0, limit));
-    }
 }

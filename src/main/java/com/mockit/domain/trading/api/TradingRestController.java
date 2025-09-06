@@ -1,50 +1,99 @@
 package com.mockit.domain.trading.api;
 
 import com.mockit.domain.trading.application.TradingService;
+import com.mockit.domain.trading.dto.TradingRequestDTO;
 import com.mockit.domain.trading.dto.TradingResponseDTO;
 import com.mockit.global.common.response.BaseResponse;
+import com.mockit.global.config.TokenUtils;
 import com.mockit.global.error.code.status.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/market")
+@RequestMapping("/trading")
 @RequiredArgsConstructor
 public class TradingRestController {
 
     private final TradingService tradingService;
+    private final TokenUtils tokenUtils;
 
-    @GetMapping("/quotes")
-    @Operation(summary = "주식 현재가 조회 API", description = "특정 주식의 현재가를 조회")
+    @PostMapping("/orders")
+    @Operation(summary = "주문 생성 API", description = "새로운 매수/매도 주문을 생성합니다.")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse( responseCode = "HANDOVER_200", description = "OK, 성공적으로 생성되었습니다.")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "OK", description = "주문이 성공적으로 생성되었습니다.")
     })
-    public BaseResponse<List<TradingResponseDTO.QuoteDto>> getQuotes(
-            @RequestParam String symbols
+    public BaseResponse<TradingResponseDTO.OrderDto> createOrder(
+            @RequestHeader(name = "Authorization") String authorizationHeader,
+            @RequestBody @Valid TradingRequestDTO.CreateOrderDto request
     ) {
-        List<String> symbolList = List.of(symbols.split(","));
-        List<TradingResponseDTO.QuoteDto> result = tradingService.getQuotes(symbolList);
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
+        TradingResponseDTO.OrderDto result = tradingService.createOrder(memberId, request);
         return BaseResponse.onSuccess(SuccessStatus.OK, result);
     }
 
-    @GetMapping("/candles")
-    @Operation(summary = "주식 OHLCV 조회 API", description = "특정 주식의 OHLCV를 조회")
+    @GetMapping("/orders")
+    @Operation(summary = "주문 목록 조회 API", description = "사용자의 주문 상태별 목록을 조회합니다.")
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse( responseCode = "HANDOVER_200", description = "OK, 성공적으로 생성되었습니다.")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "주문 목록이 성공적으로 조회되었습니다.")
     })
-    public BaseResponse<List<TradingResponseDTO.CandleDto>> getCandles(
-            @RequestParam String symbol,
-            @RequestParam(defaultValue = "1d") String tf,
-            @RequestParam(defaultValue = "200") int limit
+    public BaseResponse<List<TradingResponseDTO.OrderListDto>> getOrders(
+            @RequestHeader(name = "Authorization") String authorizationHeader,
+            @RequestParam(name = "status") String status
     ) {
-        List<TradingResponseDTO.CandleDto> result = tradingService.getCandles(symbol, tf, limit);
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
+        List<TradingResponseDTO.OrderListDto> result = tradingService.getOrders(memberId, status);
+        return BaseResponse.onSuccess(SuccessStatus.OK, result);
+    }
+
+    @GetMapping("/positions")
+    @Operation(summary = "보유 주식 포지션 조회 API", description = "사용자의 현재 보유 주식 포지션 목록을 조회합니다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "보유 주식 포지션 목록이 성공적으로 조회되었습니다.")
+    })
+    public BaseResponse<List<TradingResponseDTO.PositionDto>> getPositions(
+            @RequestHeader(name = "Authorization") String authorizationHeader
+    ) {
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
+        List<TradingResponseDTO.PositionDto> result = tradingService.getPositions(memberId);
+        return BaseResponse.onSuccess(SuccessStatus.OK, result);
+    }
+
+    @GetMapping("/portfolio")
+    @Operation(summary = "총 자산 현황 조회 API", description = "사용자의 총 자산 평가액 및 손익 정보를 조회합니다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "총 자산 현황이 성공적으로 조회되었습니다.")
+    })
+    public BaseResponse<TradingResponseDTO.PortfolioDto> getPortfolio(
+            @RequestHeader(name = "Authorization") String authorizationHeader
+    ) {
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
+        TradingResponseDTO.PortfolioDto result = tradingService.getPortfolio(memberId);
+        return BaseResponse.onSuccess(SuccessStatus.OK, result);
+    }
+
+    @PostMapping("/orders/{orderId}/cancel")
+    @Operation(summary = "주문 취소 API", description = "미체결 주문을 취소합니다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "주문이 성공적으로 취소되었습니다."),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "주문을 찾을 수 없습니다."),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "주문 취소 권한이 없습니다.")
+    })
+    public BaseResponse<TradingResponseDTO.CancelOrderDto> cancelOrder(
+            @RequestHeader(name = "Authorization") String authorizationHeader,
+            @PathVariable Long orderId
+    ) {
+        String token = authorizationHeader.substring(7);
+        Long memberId = tokenUtils.getMemberIdFromToken(token);
+        TradingResponseDTO.CancelOrderDto result = tradingService.cancelOrder(memberId, orderId);
         return BaseResponse.onSuccess(SuccessStatus.OK, result);
     }
 }
