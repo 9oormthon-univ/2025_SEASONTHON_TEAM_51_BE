@@ -1,7 +1,6 @@
 package com.mockit.domain.login.jwt;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -57,5 +56,25 @@ public class JwtUtils {
                 .setExpiration(new Date(now.getTime() + ttlMs))
                 .signWith(key(), SignatureAlgorithm.HS256)
                 .compact();
+    }
+
+    public Claims parseClaims(String token) {
+        try {
+            return Jwts.parserBuilder()
+                    .setSigningKey(key())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+        } catch (SecurityException | MalformedJwtException e) {
+            throw new IllegalArgumentException("Invalid JWT token", e);
+        } catch (ExpiredJwtException e) {
+            throw new IllegalArgumentException("Expired JWT token", e);
+        }
+    }
+
+
+    public Long getMemberIdFromToken(String token) {
+        Claims claims = parseClaims(token);
+        return Long.valueOf(claims.getSubject()); // Subject 필드에서 memberId를 추출
     }
 }
