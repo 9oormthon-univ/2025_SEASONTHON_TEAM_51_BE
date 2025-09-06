@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "LearningSteps")
+@Table(name = "learning_steps")
 @Getter
 @Setter
 public class LearningSteps extends BaseEntity {
@@ -23,4 +23,7 @@ public class LearningSteps extends BaseEntity {
 
     @Column(columnDefinition = "JSON")
     private String ruleJson;
+
+    @Column // nullable OK: 마지막 단계면 null
+    private Long nextStepId;
 }

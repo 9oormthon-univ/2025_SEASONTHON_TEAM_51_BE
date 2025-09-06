@@ -8,7 +8,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "LearningProgress")
+@Table(name = "learning_progress")
 @Getter
 @Setter
 public class LearningProgress extends BaseEntity {

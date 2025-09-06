@@ -8,7 +8,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "Quizzes")
+@Table(name = "quizzes")
 @Getter
 @Setter
 public class Quizzes extends BaseEntity {
@@ -22,4 +22,7 @@ public class Quizzes extends BaseEntity {
 
     @Column(nullable = false)
     private BigDecimal rewardCapital;
+
+    @Column(nullable = false)
+    private Long stepId; // 소속 학습 단계
 }
