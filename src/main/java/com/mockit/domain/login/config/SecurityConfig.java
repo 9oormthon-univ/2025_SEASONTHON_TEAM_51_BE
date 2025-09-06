@@ -1,3 +1,4 @@
+/*
 package com.mockit.domain.login.config;
 
 import com.mockit.domain.login.service.KakaoOAuth2UserService;
@@ -37,3 +38,4 @@ public class SecurityConfig {
         return http.build();
     }
 }
+*/
