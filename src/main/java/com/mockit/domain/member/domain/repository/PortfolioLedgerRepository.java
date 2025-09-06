@@ -12,4 +12,7 @@ public interface PortfolioLedgerRepository extends JpaRepository<PortfolioLedger
 
     @Query("SELECT SUM(pl.delta) FROM PortfolioLedger pl WHERE pl.memberId = :memberId")
     Optional<BigDecimal> findTotalCashByMemberId(@Param("memberId") Long memberId);
+
+    @Query("select coalesce(sum(p.delta), 0) from PortfolioLedger p where p.memberId = :memberId")
+    BigDecimal sumBalanceByMemberId(Long memberId);
 }
