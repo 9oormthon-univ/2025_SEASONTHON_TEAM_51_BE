@@ -1,16 +1,23 @@
 package com.mockit.domain.trading.application;
 
-import com.mockit.domain.market.entity.Candle;
+import com.mockit.domain.trading.domain.entity.Orders;
+import com.mockit.domain.trading.dto.TradingRequestDTO;
 import com.mockit.domain.trading.dto.TradingResponseDTO;
 
 import java.util.List;
 
 public interface TradingService {
 
-    List<TradingResponseDTO.QuoteDto> getQuotes(List<String> symbols);
+    TradingResponseDTO.OrderDto createOrder(Long memberId, TradingRequestDTO.CreateOrderDto request);
 
-    List<TradingResponseDTO.CandleDto> getCandles(String symbol, String tf, int limit);
+    void handleOrderExecution(Orders order);
 
-    List<Candle> saveAndReturnHistoricalCandles(String symbol, String tf);
+    List<TradingResponseDTO.OrderListDto> getOrders(Long memberId, String status);
+
+    List<TradingResponseDTO.PositionDto> getPositions(Long memberId);
+
+    TradingResponseDTO.PortfolioDto getPortfolio(Long memberId);
+
+    TradingResponseDTO.CancelOrderDto cancelOrder(Long memberId, Long orderId);
 
 }
